@@ -1260,9 +1260,13 @@ select:focus{border-color:var(--accent);}
   .stat-card:last-child{grid-column:1 / -1;}
 
   /* ---- Search & view row ---- */
-  .search-bar-row{gap:8px; margin-bottom:14px;}
-  .view-toggle button{width:34px; height:34px;}
-  .view-toggle .view-btn svg{width:14px; height:14px;}
+  .search-bar-row{gap:6px; margin-bottom:14px; flex-wrap:nowrap;}
+  .main-search-wrap{flex:1; min-width:0;}
+  .main-search-wrap input{font-size:13px; padding:10px 10px 10px 32px;}
+  .search-wrap svg{left:10px; width:14px; height:14px;}
+  .view-toggle{flex-shrink:0;}
+  .view-toggle button{width:30px; height:36px; padding:0;}
+  .view-toggle .view-btn svg{width:13px; height:13px;}
 
   /* ---- Task cards (list view) ---- */
   .task-list{gap:8px;}
@@ -2549,7 +2553,7 @@ select:focus{border-color:var(--accent);}
     }
 
     badge.style.display = 'flex';
-    badge.textContent = notifs.length;
+    badge.textContent = notifs.length > 99 ? '99+' : notifs.length;
 
     list.innerHTML = notifs.map(n=>`
       <div class="notif-item ${n.type}">

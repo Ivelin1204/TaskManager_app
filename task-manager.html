@@ -4,8 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Ledger — Task Manager</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23FF6B4A'/%3E%3Cstop offset='100%25' stop-color='%23F5B942'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Crect x='18' y='14' width='10' height='36' rx='3' fill='%231A1410'/%3E%3Crect x='18' y='40' width='28' height='10' rx='3' fill='%231A1410'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@700;800&family=Syne:wght@500;600&display=swap" rel="stylesheet">
 <style>
 :root{
   --ink:#15171C;
@@ -103,7 +104,9 @@ header.top{
   font-size:12px;
   color:var(--text-dim);
   margin-top:1px;
-  font-family:'JetBrains Mono',monospace;
+  font-family:'Syne',sans-serif;
+  font-weight:500;
+  letter-spacing:.04em;
 }
 .theme-toggle{
   width:42px;height:42px;
@@ -266,9 +269,14 @@ header.top{
   flex:1 1 220px;
   min-width:180px;
 }
-.main-search-wrap{
+.search-bar-row{
+  display:flex;
+  align-items:center;
+  gap:10px;
   margin-bottom:16px;
-  flex:none;
+}
+.main-search-wrap{
+  flex:1;
 }
 .search-wrap svg{
   position:absolute;left:13px;top:50%;transform:translateY(-50%);
@@ -591,10 +599,48 @@ select:focus{border-color:var(--accent);}
 }
 
 /* ===== Task list ===== */
+.view-toggle{
+  display:flex;
+  border:1px solid var(--border);
+  border-radius:10px;
+  overflow:hidden;
+  flex-shrink:0;
+}
+.view-btn{
+  width:38px; height:38px;
+  border:none;
+  background:var(--card);
+  color:var(--text-dim);
+  cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  transition:background .15s ease, color .15s ease;
+  border-right:1px solid var(--border);
+}
+.view-btn:last-child{border-right:none;}
+.view-btn svg{width:16px;height:16px;}
+.view-btn.active{background:var(--accent); color:#1A1410;}
+
+/* ===== Task list / grid ===== */
 .task-list{
   display:flex;
   flex-direction:column;
   gap:10px;
+}
+.task-list.grid-view{
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));
+  gap:12px;
+}
+.task-list.grid-view .task-card{
+  flex-direction:column;
+  align-items:flex-start;
+}
+.task-list.grid-view .task-card .task-top{
+  width:100%;
+}
+.task-list.grid-view .task-actions{
+  position:absolute;
+  top:12px; right:12px;
 }
 .empty-state{
   text-align:center;
@@ -831,6 +877,93 @@ select:focus{border-color:var(--accent);}
 }
 .field input:focus, .field textarea:focus{border-color:var(--accent);}
 .field textarea{resize:vertical; min-height:70px; font-family:'Inter',sans-serif;}
+
+/* ===== Rich text editor ===== */
+.rich-editor{
+  border:1px solid var(--border);
+  border-radius:10px;
+  overflow:hidden;
+  background:var(--bg-soft);
+  transition:border-color .15s ease;
+}
+.rich-editor:focus-within{border-color:var(--accent);}
+.rich-toolbar{
+  display:flex;
+  align-items:center;
+  gap:2px;
+  padding:6px 8px;
+  border-bottom:1px solid var(--border);
+  flex-wrap:wrap;
+  position:relative;
+}
+.rich-btn{
+  width:30px; height:30px;
+  border:none;
+  background:transparent;
+  color:var(--text-dim);
+  cursor:pointer;
+  border-radius:6px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:13px;
+  font-family:'Inter',sans-serif;
+  transition:background .12s ease, color .12s ease;
+}
+.rich-btn:hover, .rich-btn.active{background:var(--border); color:var(--text);}
+.rich-btn svg{width:15px; height:15px;}
+.rich-sep{width:1px; height:18px; background:var(--border); margin:0 4px;}
+.rich-content{
+  min-height:90px;
+  max-height:200px;
+  overflow-y:auto;
+  padding:10px 12px;
+  font-family:'Inter',sans-serif;
+  font-size:14px;
+  line-height:1.6;
+  color:var(--text);
+  outline:none;
+}
+.rich-content:empty:before{
+  content:attr(data-placeholder);
+  color:var(--text-faint);
+  pointer-events:none;
+}
+.rich-content ul, .rich-content ol{padding-left:20px; margin:4px 0;}
+.rich-content li{margin:2px 0;}
+
+/* Attachments */
+.attach-list{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  padding:0 10px 8px;
+}
+.attach-chip{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  background:var(--bg-soft);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:4px 8px;
+  font-size:12px;
+  color:var(--text-dim);
+  font-family:'Inter',sans-serif;
+  max-width:200px;
+}
+.attach-chip span{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.attach-chip button{
+  background:none; border:none; cursor:pointer;
+  color:var(--text-faint);
+  display:flex; align-items:center;
+  padding:0; flex-shrink:0;
+  transition:color .12s ease;
+}
+.attach-chip button:hover{color:var(--coral);}
+.attach-chip button svg{width:11px;height:11px;}
 .field select{width:100%;}
 .row2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
 .modal-actions{
@@ -857,7 +990,12 @@ select:focus{border-color:var(--accent);}
 <aside class="sidebar" id="sidebar">
   <div class="sidebar-head">
     <div class="brand">
-      <div class="mark">L</div>
+      <div class="mark">
+        <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" width="22" height="22">
+          <rect x="18" y="14" width="10" height="36" rx="3" fill="#1A1410"/>
+          <rect x="18" y="40" width="28" height="10" rx="3" fill="#1A1410"/>
+        </svg>
+      </div>
       <div>
         <h1 class="display">Ledger</h1>
         <div class="sub">task manager</div>
@@ -940,6 +1078,12 @@ select:focus{border-color:var(--accent);}
       <button class="menu-toggle" id="menuToggle" aria-label="Toggle menu">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
       </button>
+      <div class="mark">
+        <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" width="22" height="22">
+          <rect x="18" y="14" width="10" height="36" rx="3" fill="#1A1410"/>
+          <rect x="18" y="40" width="28" height="10" rx="3" fill="#1A1410"/>
+        </svg>
+      </div>
       <div>
         <h1 class="display">Ledger</h1>
         <div class="sub">task manager — <span id="dateNow"></span></div>
@@ -976,9 +1120,19 @@ select:focus{border-color:var(--accent);}
     </div>
   </section>
 
-  <div class="main-search-wrap search-wrap">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-    <input type="text" id="searchInputMain" placeholder="Search tasks...">
+  <div class="search-bar-row">
+    <div class="main-search-wrap search-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <input type="text" id="searchInputMain" placeholder="Search tasks...">
+    </div>
+    <div class="view-toggle">
+      <button class="view-btn active" id="viewList" aria-label="List view">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+      </button>
+      <button class="view-btn" id="viewGrid" aria-label="Grid view">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      </button>
+    </div>
   </div>
 
   <section class="task-list" id="taskList"></section>
@@ -995,7 +1149,28 @@ select:focus{border-color:var(--accent);}
       </div>
       <div class="field">
         <label>Description</label>
-        <textarea id="fDesc" placeholder="Add details (optional)"></textarea>
+        <div class="rich-editor" id="richEditor">
+          <div class="rich-toolbar">
+            <button type="button" class="rich-btn" data-cmd="bold" title="Bold"><b>B</b></button>
+            <button type="button" class="rich-btn" data-cmd="italic" title="Italic"><i>I</i></button>
+            <button type="button" class="rich-btn" data-cmd="underline" title="Underline"><u>U</u></button>
+            <div class="rich-sep"></div>
+            <button type="button" class="rich-btn" data-cmd="insertUnorderedList" title="Bullet list">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none"/></svg>
+            </button>
+            <button type="button" class="rich-btn" data-cmd="insertOrderedList" title="Numbered list">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 6h1v4" stroke="currentColor" stroke-linecap="round"/><path d="M4 10h2" stroke="currentColor" stroke-linecap="round"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1.5" stroke="currentColor" stroke-linecap="round"/></svg>
+            </button>
+            <div class="rich-sep"></div>
+            <button type="button" class="rich-btn" id="attachBtn" title="Attach file">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+            </button>
+            <input type="file" id="attachInput" multiple style="display:none">
+            <div class="attach-list" id="attachList"></div>
+          </div>
+          <div class="rich-content" id="fDescRich" contenteditable="true" data-placeholder="Add details (optional)"></div>
+        </div>
+        <textarea id="fDesc" style="display:none"></textarea>
       </div>
       <div class="row2">
         <div class="field">
@@ -1274,6 +1449,67 @@ select:focus{border-color:var(--accent);}
   }
 
   // ===== Add category =====
+  // ===== Rich text editor =====
+  let attachedFiles = [];
+
+  function initRichEditor(){
+    const editor = document.getElementById('fDescRich');
+    const toolbar = document.querySelector('.rich-toolbar');
+    const attachBtn = document.getElementById('attachBtn');
+    const attachInput = document.getElementById('attachInput');
+    const attachList = document.getElementById('attachList');
+
+    // Toolbar commands
+    toolbar.addEventListener('mousedown', (e)=>{
+      const btn = e.target.closest('.rich-btn[data-cmd]');
+      if(!btn) return;
+      e.preventDefault();
+      document.execCommand(btn.dataset.cmd, false, null);
+      updateActiveStates();
+    });
+
+    // Active states
+    function updateActiveStates(){
+      ['bold','italic','underline','insertUnorderedList','insertOrderedList'].forEach(cmd=>{
+        const btn = toolbar.querySelector(`[data-cmd="${cmd}"]`);
+        if(btn) btn.classList.toggle('active', document.queryCommandState(cmd));
+      });
+    }
+    editor.addEventListener('keyup', updateActiveStates);
+    editor.addEventListener('mouseup', updateActiveStates);
+
+    // File attachment
+    attachBtn.addEventListener('click', ()=> attachInput.click());
+    attachInput.addEventListener('change', ()=>{
+      Array.from(attachInput.files).forEach(f=>{
+        if(!attachedFiles.find(x=>x.name===f.name && x.size===f.size)){
+          attachedFiles.push(f);
+        }
+      });
+      attachInput.value = '';
+      renderAttachList(attachList);
+    });
+  }
+
+  function renderAttachList(container){
+    container = container || document.getElementById('attachList');
+    if(!container) return;
+    container.innerHTML = attachedFiles.map((f,i)=>`
+      <div class="attach-chip">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+        <span title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
+        <button type="button" data-idx="${i}" aria-label="Remove">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>`).join('');
+    container.querySelectorAll('button[data-idx]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        attachedFiles.splice(Number(btn.dataset.idx), 1);
+        renderAttachList(container);
+      });
+    });
+  }
+
   function initAddCategory(){
     const btn = document.getElementById('addCategoryBtn');
     const row = document.getElementById('catInputRow');
@@ -1649,6 +1885,7 @@ select:focus{border-color:var(--accent);}
     document.getElementById('saveBtn').textContent = task ? 'Save changes' : 'Save task';
     document.getElementById('fTitle').value = task ? task.title : '';
     document.getElementById('fDesc').value = task ? task.description || '' : '';
+    document.getElementById('fDescRich').innerHTML = task ? (task.description || '') : '';
     document.getElementById('fCategory').value = task ? task.category || '' : '';
     document.getElementById('fPriority').value = task ? task.priority : 'medium';
     buildCustomSelect(document.getElementById('fPriority'));
@@ -1662,6 +1899,8 @@ select:focus{border-color:var(--accent);}
     form.reset();
     document.getElementById('dueDateWrap').classList.remove('open');
     document.getElementById('calPanel').classList.remove('open');
+    attachedFiles = [];
+    renderAttachList();
   }
   document.getElementById('addTaskBtn').addEventListener('click', ()=>{ closeSidebar(); openModal(null); });
   document.getElementById('cancelBtn').addEventListener('click', closeModal);
@@ -1674,7 +1913,7 @@ select:focus{border-color:var(--accent);}
     if(!title) return;
     const data = {
       title,
-      description: document.getElementById('fDesc').value.trim(),
+      description: document.getElementById('fDescRich').innerHTML.trim(),
       category: document.getElementById('fCategory').value.trim(),
       priority: document.getElementById('fPriority').value,
       due: document.getElementById('fDue').value
@@ -1698,6 +1937,21 @@ select:focus{border-color:var(--accent);}
   initCustomSelects();
   initDatePicker();
   initAddCategory();
+  initRichEditor();
+
+  // ===== View toggle =====
+  let currentView = localStorage.getItem('ledger-view') || 'list';
+  function applyView(v){
+    currentView = v;
+    localStorage.setItem('ledger-view', v);
+    const tl = document.getElementById('taskList');
+    tl.classList.toggle('grid-view', v === 'grid');
+    document.getElementById('viewList').classList.toggle('active', v === 'list');
+    document.getElementById('viewGrid').classList.toggle('active', v === 'grid');
+  }
+  document.getElementById('viewList').addEventListener('click', ()=> applyView('list'));
+  document.getElementById('viewGrid').addEventListener('click', ()=> applyView('grid'));
+  applyView(currentView);
 })();
 </script>
 </body>

@@ -1809,7 +1809,7 @@ $('joinSave').addEventListener('click',async ()=>{
 // ══════════════════════════════════
 function getNotifs(){
   const td=today(), now=new Date(), notifs=[];
-  tasks.filter(t=>!t.completed).forEach(t=>{
+  getAllMyTasks().filter(t=>!t.completed).forEach(t=>{
     if(!t.due) return;
     if(t.due<td) notifs.push({type:'overdue',task:t,msg:'Overdue'});
     else if(t.due===td) notifs.push({type:'today',task:t,msg:'Due today'});

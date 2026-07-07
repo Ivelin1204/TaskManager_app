@@ -871,7 +871,30 @@ body{background:var(--bg); color:var(--text); font-family:'Inter',sans-serif; tr
   </div>
 </div>
 
-<script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import {
+  getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
+  signOut, reauthenticateWithCredential, updatePassword, EmailAuthProvider
+} from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import {
+  getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, getDocs,
+  collection, query, where, orderBy, onSnapshot, arrayUnion, writeBatch
+} from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAGvZlrTMy8JLZR3KA2R11NMF-V7ADpZRw",
+  authDomain: "taskmanager-3d350.firebaseapp.com",
+  projectId: "taskmanager-3d350",
+  storageBucket: "taskmanager-3d350.firebasestorage.app",
+  messagingSenderId: "138623495374",
+  appId: "1:138623495374:web:4a771e3142e3a89c35f49f",
+  measurementId: "G-6E008L9V83"
+};
+const fbApp = initializeApp(firebaseConfig);
+const auth = getAuth(fbApp);
+const db = getFirestore(fbApp);
+
 (()=>{
 // ══════════════════════════════════
 //  UTILS
@@ -890,7 +913,6 @@ const sanitize = html => {
   });
   return t.innerHTML;
 };
-const uid = () => 'id-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);
 const today = () => new Date().toISOString().slice(0,10);
 const formatDate = iso => {
   if(!iso) return 'No date';
@@ -903,24 +925,16 @@ const isOverdue = t => !t.completed && t.due && t.due < today();
 const pRank = {high:0,medium:1,low:2};
 
 // ══════════════════════════════════
-//  STORAGE HELPERS
-// ══════════════════════════════════
-const getUsers = () => JSON.parse(localStorage.getItem('lr-users')||'[]');
-const saveUsers = u => localStorage.setItem('lr-users', JSON.stringify(u));
-const getGroups = () => JSON.parse(localStorage.getItem('lr-groups')||'[]');
-const saveGroups = g => localStorage.setItem('lr-groups', JSON.stringify(g));
-const getUserTasks = uid => JSON.parse(localStorage.getItem('lr-tasks-'+uid)||'[]');
-const saveUserTasks = (uid,t) => localStorage.setItem('lr-tasks-'+uid, JSON.stringify(t));
-const getGroupTasks = gid => JSON.parse(localStorage.getItem('lr-gtasks-'+gid)||'[]');
-const saveGroupTasks = (gid,t) => localStorage.setItem('lr-gtasks-'+gid, JSON.stringify(t));
-const getGroupChat = gid => JSON.parse(localStorage.getItem('lr-chat-'+gid)||'[]');
-const saveGroupChat = (gid,c) => localStorage.setItem('lr-chat-'+gid, JSON.stringify(c));
-
-// ══════════════════════════════════
 //  STATE
 // ══════════════════════════════════
 let currentUser = null;
 let tasks = [];
+let myGroups = [];
+let groupTasksMap = new Map();
+let groupTaskUnsubs = new Map();
+let groupChatMsgs = [];
+let userCache = new Map();
+let unsubTasks = null, unsubGroups = null, unsubChat = null;
 let sortMode = 'date';
 let filterCat = 'all', filterPrio = 'all', filterStatus = 'all';
 let viewMode = 'list';
@@ -928,6 +942,79 @@ let searchQ = '';
 let currentPage = 'myTasks';
 let currentGroup = null;
 let groupSearchQ = '';
+
+// ══════════════════════════════════
+//  FIRESTORE HELPERS
+// ══════════════════════════════════
+async function getUserDoc(uid){
+  if(userCache.has(uid)) return userCache.get(uid);
+  const snap = await getDoc(doc(db,'users',uid));
+  const data = snap.exists() ? {id:uid, ...snap.data()} : {id:uid, username:'Unknown', displayName:'Unknown', email:''};
+  userCache.set(uid,data);
+  return data;
+}
+
+function getMyGroups(){ return myGroups; }
+function getGroupTasks(gid){ return groupTasksMap.get(gid)||[]; }
+
+function reconcileGroupTaskListeners(){
+  const currentIds = new Set(myGroups.map(g=>g.id));
+  for(const [gid,unsub] of groupTaskUnsubs){
+    if(!currentIds.has(gid)){ unsub(); groupTaskUnsubs.delete(gid); groupTasksMap.delete(gid); }
+  }
+  myGroups.forEach(g=>{
+    if(groupTaskUnsubs.has(g.id)) return;
+    const unsub = onSnapshot(collection(db,'groups',g.id,'tasks'), snap=>{
+      groupTasksMap.set(g.id, snap.docs.map(d=>({id:d.id,...d.data()})));
+      renderAll();
+      if(currentGroup && currentGroup.id===g.id) renderGroupTasks();
+    });
+    groupTaskUnsubs.set(g.id, unsub);
+  });
+}
+
+function subscribePersonalTasks(uid){
+  if(unsubTasks) unsubTasks();
+  unsubTasks = onSnapshot(collection(db,'users',uid,'tasks'), snap=>{
+    tasks = snap.docs.map(d=>({id:d.id,...d.data()}));
+    renderAll();
+  });
+}
+
+function subscribeGroups(uid){
+  if(unsubGroups) unsubGroups();
+  const q = query(collection(db,'groups'), where('members','array-contains',uid));
+  unsubGroups = onSnapshot(q, snap=>{
+    myGroups = snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+    reconcileGroupTaskListeners();
+    renderGroupsSidebar();
+    if(currentPage==='groups') renderGroupsPage();
+    if(currentPage==='groupDetail' && currentGroup){
+      const updated = myGroups.find(g=>g.id===currentGroup.id);
+      if(updated){ currentGroup=updated; renderGroupDetail(); } else { showPage('groups'); }
+    }
+  });
+}
+
+function subscribeGroupChat(gid){
+  if(unsubChat) unsubChat();
+  const q = query(collection(db,'groups',gid,'chat'), orderBy('createdAt','asc'));
+  unsubChat = onSnapshot(q, snap=>{
+    groupChatMsgs = snap.docs.map(d=>({id:d.id,...d.data()}));
+    renderGroupChat();
+  });
+}
+function unsubscribeGroupChat(){ if(unsubChat){ unsubChat(); unsubChat=null; } groupChatMsgs=[]; }
+
+function teardownAllSubscriptions(){
+  if(unsubTasks){ unsubTasks(); unsubTasks=null; }
+  if(unsubGroups){ unsubGroups(); unsubGroups=null; }
+  unsubscribeGroupChat();
+  groupTaskUnsubs.forEach(unsub=>unsub());
+  groupTaskUnsubs.clear();
+  groupTasksMap.clear();
+  userCache.clear();
+}
 
 // ══════════════════════════════════
 //  THEME
@@ -961,68 +1048,68 @@ $('tabRegister').addEventListener('click',()=>{
   $('tabRegister').classList.add('active'); $('tabLogin').classList.remove('active');
   $('registerForm').style.display=''; $('loginForm').style.display='none';
 });
-$('loginBtn').addEventListener('click',()=>{
+const SYNTHETIC_DOMAIN='@ledger.local';
+$('loginBtn').addEventListener('click',async ()=>{
   const username=$('loginUsername').value.trim();
   const password=$('loginPassword').value;
   if(!username||!password){ $('loginErr').textContent='Please fill all fields.'; return; }
-  const users=getUsers();
-  const user=users.find(u=>u.username.toLowerCase()===username.toLowerCase()&&u.password===btoa(password));
-  if(!user){ $('loginErr').textContent='Invalid username or password.'; return; }
-  loginUser(user);
+  $('loginErr').textContent='';
+  try{
+    await signInWithEmailAndPassword(auth, username.toLowerCase()+SYNTHETIC_DOMAIN, password);
+  }catch(err){
+    $('loginErr').textContent='Invalid username or password.';
+  }
 });
-$('registerBtn').addEventListener('click',()=>{
+$('registerBtn').addEventListener('click',async ()=>{
   const username=$('regUsername').value.trim();
   const email=$('regEmail').value.trim();
   const password=$('regPassword').value;
   if(!username||!email||!password){ $('registerErr').textContent='Please fill all fields.'; return; }
   if(password.length<6){ $('registerErr').textContent='Password must be at least 6 characters.'; return; }
-  const users=getUsers();
-  if(users.find(u=>u.username.toLowerCase()===username.toLowerCase())){ $('registerErr').textContent='Username already taken.'; return; }
-  if(users.find(u=>u.email.toLowerCase()===email.toLowerCase())){ $('registerErr').textContent='Email already registered.'; return; }
-  const user={id:uid(),username,email,password:btoa(password),createdAt:Date.now()};
-  users.push(user);
-  saveUsers(users);
-  loginUser(user);
+  if(!/^[a-zA-Z0-9_]+$/.test(username)){ $('registerErr').textContent='Username can only contain letters, numbers and underscores.'; return; }
+  $('registerErr').textContent='';
+  const usernameLower=username.toLowerCase();
+  try{
+    const unameSnap=await getDoc(doc(db,'usernames',usernameLower));
+    if(unameSnap.exists()){ $('registerErr').textContent='Username already taken.'; return; }
+    const cred=await createUserWithEmailAndPassword(auth, usernameLower+SYNTHETIC_DOMAIN, password);
+    await setDoc(doc(db,'users',cred.user.uid),{username,email,displayName:username,bio:'',avatarColor:AVATAR_COLORS[0],photoURL:null,createdAt:Date.now()});
+    await setDoc(doc(db,'usernames',usernameLower),{uid:cred.user.uid});
+  }catch(err){
+    $('registerErr').textContent = err.code==='auth/email-already-in-use' ? 'Username already taken.' : (err.message||'Registration failed.');
+  }
 });
 [$('loginUsername'),$('loginPassword')].forEach(el=>el.addEventListener('keydown',e=>e.key==='Enter'&&$('loginBtn').click()));
 [$('regUsername'),$('regEmail'),$('regPassword')].forEach(el=>el.addEventListener('keydown',e=>e.key==='Enter'&&$('registerBtn').click()));
 
-function loginUser(user){
-  currentUser=user;
-  localStorage.setItem('lr-current',user.id);
-  tasks=getUserTasks(user.id);
+$('logoutBtn').addEventListener('click',()=>signOut(auth));
+
+onAuthStateChanged(auth, async (fbUser)=>{
+  teardownAllSubscriptions();
+  if(!fbUser){
+    currentUser=null; tasks=[]; myGroups=[];
+    $('app').style.display='none'; $('fab').style.display='none';
+    $('authScreen').style.display='flex';
+    $('loginPassword').value=''; $('loginErr').textContent='';
+    return;
+  }
+  currentUser = await getUserDoc(fbUser.uid);
   $('authScreen').style.display='none';
   $('app').style.display='block';
   $('fab').style.display='flex';
-  $('userAvatar').textContent=user.username[0].toUpperCase();
-  $('userName').textContent=user.username;
-  $('userEmail').textContent=user.email;
-  renderAll();
-  renderGroupsSidebar();
+  subscribePersonalTasks(fbUser.uid);
+  subscribeGroups(fbUser.uid);
   initNotifications();
   updateSidebarUser();
-}
-$('logoutBtn').addEventListener('click',()=>{
-  currentUser=null; tasks=[];
-  localStorage.removeItem('lr-current');
-  $('app').style.display='none'; $('fab').style.display='none';
-  $('authScreen').style.display='flex';
-  $('loginPassword').value=''; $('loginErr').textContent='';
+  showPage('myTasks');
 });
-
-// Auto login
-function tryAutoLogin(){
-  const id=localStorage.getItem('lr-current');
-  if(!id) return;
-  const user=getUsers().find(u=>u.id===id);
-  if(user) loginUser(user);
-}
 
 // ══════════════════════════════════
 //  NAVIGATION
 // ══════════════════════════════════
 function showPage(page, groupId){
   currentPage=page;
+  if(page!=='groupDetail') unsubscribeGroupChat();
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   $('groupDetail').classList.remove('active'); $('groupDetail').style.display='none';
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
@@ -1041,13 +1128,14 @@ function showPage(page, groupId){
     $('fab').style.display='none';
     renderGroupsPage();
   } else if(page==='groupDetail' && groupId){
-    currentGroup=getGroups().find(g=>g.id===groupId);
+    currentGroup=myGroups.find(g=>g.id===groupId);
     if(!currentGroup) return showPage('groups');
     $('fab').style.display='none';
     $('groupDetail').style.display='flex';
     $('groupDetail').classList.add('active');
     document.querySelectorAll('.group-nav-item[data-gid="'+groupId+'"]').forEach(n=>n.classList.add('active'));
     $('topbarTitle').textContent=currentGroup.name;
+    subscribeGroupChat(groupId);
     renderGroupDetail();
   }
   closeSidebar();
@@ -1068,8 +1156,6 @@ $('sidebarBackdrop').addEventListener('click', closeSidebar);
 // ══════════════════════════════════
 //  TASKS — MY TASKS
 // ══════════════════════════════════
-function saveTasks(){ if(currentUser) saveUserTasks(currentUser.id, tasks); }
-
 function getAssignedGroupTasks(){
   if(!currentUser) return [];
   return getMyGroups().flatMap(g=>{
@@ -1193,7 +1279,7 @@ function renderAll(){
 }
 
 // Task list interactions
-$('taskList').addEventListener('click', e=>{
+$('taskList').addEventListener('click', async e=>{
   const btn=e.target.closest('[data-action]'); if(!btn) return;
   const card=e.target.closest('.task-card');
   const id=card?.dataset.id;
@@ -1201,14 +1287,8 @@ $('taskList').addEventListener('click', e=>{
   const action=btn.dataset.action;
 
   if(action==='toggle'&&task){
-    if(task._groupId){
-      const gt=getGroupTasks(task._groupId);
-      const t=gt.find(x=>x.id===id);
-      if(t){ t.completed=!t.completed; saveGroupTasks(task._groupId,gt); }
-    } else {
-      task.completed=!task.completed; saveTasks();
-    }
-    renderAll();
+    if(task._groupId) await updateDoc(doc(db,'groups',task._groupId,'tasks',id),{completed:!task.completed});
+    else await updateDoc(doc(db,'users',currentUser.id,'tasks',id),{completed:!task.completed});
   }
   else if(action==='more'){
     const wrap=btn.closest('.task-actions-wrap');
@@ -1218,18 +1298,12 @@ $('taskList').addEventListener('click', e=>{
   }
   else if(action==='edit'&&task){ openTaskModal(task, task._groupId||null); }
   else if(action==='delete'&&task){
-    if(task._groupId){
-      card.classList.add('removing');
-      setTimeout(()=>{
-        const gt=getGroupTasks(task._groupId).filter(t=>t.id!==id);
-        saveGroupTasks(task._groupId, gt);
-        renderAll();
-      },200);
-    } else {
-      card.classList.add('removing');
-      card.style.transitionDelay='0ms';
-      setTimeout(()=>{ tasks=tasks.filter(t=>t.id!==id); saveTasks(); renderAll(); },200);
-    }
+    card.classList.add('removing');
+    card.style.transitionDelay='0ms';
+    setTimeout(()=>{
+      if(task._groupId) deleteDoc(doc(db,'groups',task._groupId,'tasks',id));
+      else deleteDoc(doc(db,'users',currentUser.id,'tasks',id));
+    },200);
   }
 });
 document.addEventListener('click', e=>{
@@ -1336,7 +1410,7 @@ fPrioPanel.querySelectorAll('.cs-option').forEach(opt=>{
 //  TASK MODAL
 // ══════════════════════════════════
 let editingTaskId=null, editingGroupId=null;
-function openTaskModal(task, groupId){
+async function openTaskModal(task, groupId){
   editingTaskId=task?task.id:null;
   editingGroupId=groupId||null;
   $('taskModalTitle').textContent=task?'Edit task':'New task';
@@ -1355,12 +1429,11 @@ function openTaskModal(task, groupId){
 
   if(groupId){
     $('fAssignField').style.display='';
-    const group=getGroups().find(g=>g.id===groupId);
-    const users=getUsers();
-    const members=[{id:'',label:'Unassigned',initials:'—',color:''},{id:'all',label:'All Members',initials:'★',color:'linear-gradient(135deg,var(--teal),var(--violet))'},...(group?.members||[]).map(mid=>{
-      const u=users.find(x=>x.id===mid);
-      return u?{id:u.id,label:u.username,initials:u.username[0].toUpperCase(),color:'linear-gradient(135deg,var(--coral),var(--amber))'}:null;
-    }).filter(Boolean)];
+    const group=myGroups.find(g=>g.id===groupId);
+    const memberDocs=await Promise.all((group?.members||[]).map(getUserDoc));
+    const members=[{id:'',label:'Unassigned',initials:'—',color:''},{id:'all',label:'All Members',initials:'★',color:'linear-gradient(135deg,var(--teal),var(--violet))'},...memberDocs.map(u=>
+      ({id:u.id,label:u.username,initials:u.username[0].toUpperCase(),color:'linear-gradient(135deg,var(--coral),var(--amber))'})
+    )];
 
     // Set hidden input value
     $('fAssign').value=task?.assignedTo||'';
@@ -1403,22 +1476,19 @@ $('taskCancel').addEventListener('click', closeTaskModal);
 $('taskOverlay').addEventListener('click', e=>{ if(e.target===$('taskOverlay')) closeTaskModal(); });
 document.addEventListener('keydown', e=>{ if(e.key==='Escape') { closeTaskModal(); closeGroupModal(); closeInviteModal(); } });
 
-$('taskSave').addEventListener('click',()=>{
+$('taskSave').addEventListener('click',async ()=>{
   const title=$('fTitle').value.trim();
   if(!title) return;
   const data={ title, description:$('fDesc').innerHTML.trim(), category:$('fCategory').value.trim(), priority:$('fPriority').value, due:$('fDue').value, assignedTo:$('fAssign').value||null };
 
   if(editingGroupId){
-    const gt=getGroupTasks(editingGroupId);
-    if(editingTaskId){ const t=gt.find(x=>x.id===editingTaskId); if(t) Object.assign(t,data); }
-    else gt.push({id:uid(),completed:false,createdAt:Date.now(),...data});
-    saveGroupTasks(editingGroupId,gt);
-    closeTaskModal(); renderGroupDetail();
+    if(editingTaskId) await updateDoc(doc(db,'groups',editingGroupId,'tasks',editingTaskId), data);
+    else await addDoc(collection(db,'groups',editingGroupId,'tasks'), {completed:false,createdAt:Date.now(),...data});
   } else {
-    if(editingTaskId){ const t=tasks.find(x=>x.id===editingTaskId); if(t) Object.assign(t,data); }
-    else tasks.push({id:uid(),completed:false,createdAt:Date.now(),...data});
-    saveTasks(); closeTaskModal(); renderAll();
+    if(editingTaskId) await updateDoc(doc(db,'users',currentUser.id,'tasks',editingTaskId), data);
+    else await addDoc(collection(db,'users',currentUser.id,'tasks'), {completed:false,createdAt:Date.now(),...data});
   }
+  closeTaskModal();
 });
 
 // Rich editor
@@ -1437,10 +1507,6 @@ $('fab').addEventListener('click',()=>{ currentPage==='myTasks'?openTaskModal(nu
 //  GROUPS
 // ══════════════════════════════════
 const GROUP_COLORS=['#FF6B4A','#2DD4BF','#F5B942','#9B8CFF','#F472B6','#34D399'];
-
-function getMyGroups(){
-  return getGroups().filter(g=>g.members&&g.members.includes(currentUser.id));
-}
 
 function renderGroupsSidebar(){
   const myGroups=getMyGroups();
@@ -1500,30 +1566,30 @@ function renderGroupsPage(){
   grid.querySelectorAll('.group-delete-btn').forEach(btn=>{
     btn.addEventListener('mouseenter',()=>{ btn.style.borderColor='var(--coral)'; btn.style.color='var(--coral)'; btn.style.background='var(--coral-dim)'; });
     btn.addEventListener('mouseleave',()=>{ btn.style.borderColor='var(--border)'; btn.style.color='var(--text-faint)'; btn.style.background='transparent'; });
-    btn.addEventListener('click', e=>{
+    btn.addEventListener('click', async e=>{
       e.stopPropagation();
-      if(!confirm(`Delete group "${getGroups().find(g=>g.id===btn.dataset.gid)?.name}"? This cannot be undone.`)) return;
       const gid=btn.dataset.gid;
-      saveGroups(getGroups().filter(g=>g.id!==gid));
-      localStorage.removeItem('lr-gtasks-'+gid);
-      localStorage.removeItem('lr-chat-'+gid);
-      renderGroupsSidebar();
-      renderGroupsPage();
+      if(!confirm(`Delete group "${myGroups.find(g=>g.id===gid)?.name}"? This cannot be undone.`)) return;
+      const [taskDocs,chatDocs]=await Promise.all([getDocs(collection(db,'groups',gid,'tasks')),getDocs(collection(db,'groups',gid,'chat'))]);
+      const batch=writeBatch(db);
+      taskDocs.forEach(d=>batch.delete(d.ref));
+      chatDocs.forEach(d=>batch.delete(d.ref));
+      batch.delete(doc(db,'groups',gid));
+      await batch.commit();
     });
   });
   $('createGroupBtn').addEventListener('click', openGroupModal);
 }
 
-function renderGroupDetail(){
+async function renderGroupDetail(){
   if(!currentGroup) return;
   $('groupDetailName').textContent=currentGroup.name;
   // Members bar
-  const users=getUsers();
+  const memberDocs=await Promise.all((currentGroup.members||[]).map(getUserDoc));
   const membersBar=$('groupMembersBar');
-  membersBar.innerHTML=(currentGroup.members||[]).map(mid=>{
-    const u=users.find(x=>x.id===mid);
-    return u?`<div class="member-avatar" title="${esc(u.username)}">${u.username[0].toUpperCase()}</div>`:'';
-  }).join('');
+  membersBar.innerHTML=memberDocs.map(u=>
+    `<div class="member-avatar" title="${esc(u.username)}">${u.username[0].toUpperCase()}</div>`
+  ).join('');
   // Invite button
   if(currentGroup.ownerId===currentUser.id){
     membersBar.innerHTML+=`<button class="invite-btn" id="openInviteBtn">
@@ -1539,18 +1605,20 @@ function renderGroupDetail(){
   $('groupSearchInput').oninput=e=>{ groupSearchQ=e.target.value; renderGroupTasks(); };
 }
 
-function renderGroupTasks(){
+async function renderGroupTasks(){
   if(!currentGroup) return;
   const q=groupSearchQ.toLowerCase();
   const gt=getGroupTasks(currentGroup.id).filter(t=>!q||t.title.toLowerCase().includes(q));
-  const users=getUsers();
   const container=$('groupTaskList');
   if(!gt.length){
     container.innerHTML='<div class="empty"><div class="icon">📋</div><div style="font-family:Manrope,sans-serif;font-size:14px;font-weight:600;margin-bottom:4px">No group tasks yet</div><div>Add the first task for this group.</div></div>';
     return;
   }
+  const assigneeIds=[...new Set(gt.map(t=>t.assignedTo).filter(a=>a&&a!=='all'))];
+  const assigneeDocs=await Promise.all(assigneeIds.map(getUserDoc));
+  const assigneeMap=new Map(assigneeDocs.map(u=>[u.id,u]));
   container.innerHTML=gt.map((t,i)=>{
-    const assignedUser=t.assignedTo==='all'?{username:'All Members',isAll:true}:t.assignedTo?users.find(u=>u.id===t.assignedTo):null;
+    const assignedUser=t.assignedTo==='all'?{username:'All Members',isAll:true}:t.assignedTo?assigneeMap.get(t.assignedTo):null;
     return `<div class="task-card${t.completed?' completed':''}${isOverdue(t)?' overdue':''}" data-id="${t.id}" data-group="1" style="transition-delay:${Math.min(i*40,400)}ms">
       <button class="chk${t.completed?' done':''}" data-action="gtoggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></button>
       <div class="task-body">
@@ -1578,15 +1646,14 @@ function renderGroupTasks(){
   requestAnimationFrame(()=>requestAnimationFrame(()=>container.querySelectorAll('.task-card').forEach(c=>c.classList.add('in'))));
 }
 
-$('groupTaskList').addEventListener('click',e=>{
+$('groupTaskList').addEventListener('click',async e=>{
   const btn=e.target.closest('[data-action]'); if(!btn||!currentGroup) return;
   const card=e.target.closest('.task-card');
   const id=card?.dataset.id;
   const action=btn.dataset.action;
-  const gt=getGroupTasks(currentGroup.id);
-  const task=gt.find(t=>t.id===id);
+  const task=getGroupTasks(currentGroup.id).find(t=>t.id===id);
 
-  if(action==='gtoggle'&&task){ task.completed=!task.completed; saveGroupTasks(currentGroup.id,gt); renderGroupTasks(); }
+  if(action==='gtoggle'&&task) await updateDoc(doc(db,'groups',currentGroup.id,'tasks',id),{completed:!task.completed});
   else if(action==='more'){
     const wrap=btn.closest('.task-actions-wrap');
     const isOpen=wrap.classList.contains('open');
@@ -1596,23 +1663,25 @@ $('groupTaskList').addEventListener('click',e=>{
   else if(action==='gedit'&&task){ openTaskModal(task,currentGroup.id); }
   else if(action==='gdelete'&&task){
     card.classList.add('removing');
-    setTimeout(()=>{ saveGroupTasks(currentGroup.id,gt.filter(t=>t.id!==id)); renderGroupTasks(); },200);
+    setTimeout(()=>{ deleteDoc(doc(db,'groups',currentGroup.id,'tasks',id)); },200);
   }
 });
 
 // ── GROUP CHAT ──
-function renderGroupChat(){
+async function renderGroupChat(){
   if(!currentGroup) return;
-  const msgs=getGroupChat(currentGroup.id);
-  const users=getUsers();
+  const msgs=groupChatMsgs;
   const container=$('chatMessages');
   if(!msgs.length){
     container.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-faint);font-size:13px">No messages yet. Start the conversation!</div>';
     return;
   }
+  const senderIds=[...new Set(msgs.map(m=>m.userId))];
+  const senderDocs=await Promise.all(senderIds.map(getUserDoc));
+  const senderMap=new Map(senderDocs.map(u=>[u.id,u]));
   container.innerHTML=msgs.map(m=>{
     const isMine=m.userId===currentUser.id;
-    const u=users.find(x=>x.id===m.userId);
+    const u=senderMap.get(m.userId);
     const name=u?u.username:'Unknown';
     const time=new Date(m.createdAt).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
     return `<div class="chat-msg ${isMine?'mine':'theirs'}">
@@ -1624,14 +1693,11 @@ function renderGroupChat(){
   container.scrollTop=container.scrollHeight;
 }
 
-function sendChatMessage(){
+async function sendChatMessage(){
   const text=$('chatInput').value.trim();
   if(!text||!currentGroup) return;
-  const msgs=getGroupChat(currentGroup.id);
-  msgs.push({id:uid(),userId:currentUser.id,text,createdAt:Date.now()});
-  saveGroupChat(currentGroup.id,msgs);
   $('chatInput').value='';
-  renderGroupChat();
+  await addDoc(collection(db,'groups',currentGroup.id,'chat'), {userId:currentUser.id,text,createdAt:Date.now()});
 }
 $('chatSend').addEventListener('click',sendChatMessage);
 $('chatInput').addEventListener('keydown',e=>{
@@ -1666,16 +1732,13 @@ document.querySelectorAll('.emoji-choice').forEach(btn=>{
 function closeGroupModal(){ $('groupOverlay').classList.remove('open'); }
 $('groupCancel').addEventListener('click',closeGroupModal);
 $('groupOverlay').addEventListener('click',e=>{ if(e.target===$('groupOverlay')) closeGroupModal(); });
-$('groupSave').addEventListener('click',()=>{
+$('groupSave').addEventListener('click',async ()=>{
   const name=$('gName').value.trim();
   if(!name) return;
-  const group={id:uid(),name,description:$('gDesc').value.trim(),emoji:$('gEmoji').value||'👥',ownerId:currentUser.id,members:[currentUser.id],createdAt:Date.now()};
-  const groups=getGroups();
-  groups.push(group);
-  saveGroups(groups);
+  const group={name,description:$('gDesc').value.trim(),emoji:$('gEmoji').value||'👥',ownerId:currentUser.id,members:[currentUser.id],createdAt:Date.now()};
+  const ref=await addDoc(collection(db,'groups'),group);
   closeGroupModal();
-  renderGroupsSidebar();
-  showPage('groupDetail',group.id);
+  showPage('groupDetail',ref.id);
 });
 
 // ── INVITE MODAL ──
@@ -1683,23 +1746,19 @@ function openInviteModal(){ $('inviteOverlay').classList.add('open'); $('inviteU
 function closeInviteModal(){ $('inviteOverlay').classList.remove('open'); }
 $('inviteCancel').addEventListener('click',closeInviteModal);
 $('inviteOverlay').addEventListener('click',e=>{ if(e.target===$('inviteOverlay')) closeInviteModal(); });
-$('inviteSave').addEventListener('click',()=>{
+$('inviteSave').addEventListener('click',async ()=>{
   const username=$('inviteUsername').value.trim();
   if(!username){ $('inviteErr').textContent='Enter a username.'; return; }
-  const users=getUsers();
-  const target=users.find(u=>u.username.toLowerCase()===username.toLowerCase());
-  if(!target){ $('inviteErr').textContent='User not found.'; return; }
-  if(target.id===currentUser.id){ $('inviteErr').textContent="You're already in this group."; return; }
-  const groups=getGroups();
-  const group=groups.find(g=>g.id===currentGroup.id);
-  if(group.members.includes(target.id)){ $('inviteErr').textContent='User is already a member.'; return; }
-  group.members.push(target.id);
-  saveGroups(groups);
-  currentGroup=group;
+  const usernameLower=username.toLowerCase();
+  const unameSnap=await getDoc(doc(db,'usernames',usernameLower));
+  if(!unameSnap.exists()){ $('inviteErr').textContent='User not found.'; return; }
+  const targetUid=unameSnap.data().uid;
+  if(targetUid===currentUser.id){ $('inviteErr').textContent="You're already in this group."; return; }
+  if(currentGroup.members.includes(targetUid)){ $('inviteErr').textContent='User is already a member.'; return; }
+  await updateDoc(doc(db,'groups',currentGroup.id),{members:arrayUnion(targetUid)});
   closeInviteModal();
-  renderGroupDetail();
-  renderGroupsSidebar();
-  showToast('soon','✅ Invited',`${target.username} added to ${group.name}`);
+  const target=await getUserDoc(targetUid);
+  showToast('soon','✅ Invited',`${target.username} added to ${currentGroup.name}`);
 });
 
 // ══════════════════════════════════
@@ -1841,16 +1900,6 @@ const AVATAR_COLORS=[
   'linear-gradient(135deg,#F59E0B,#EF4444)',
 ];
 
-function getUserProfile(){
-  const profiles=JSON.parse(localStorage.getItem('lr-profiles')||'{}');
-  return profiles[currentUser.id]||{};
-}
-function saveUserProfile(data){
-  const profiles=JSON.parse(localStorage.getItem('lr-profiles')||'{}');
-  profiles[currentUser.id]={...(profiles[currentUser.id]||{}),...data};
-  localStorage.setItem('lr-profiles',JSON.stringify(profiles));
-}
-
 function applyAvatarPhoto(photoData){
   const img=$('profileAvatarImg'), init=$('profileAvatarInitial');
   if(photoData){ img.src=photoData; img.style.display='block'; init.style.display='none'; }
@@ -1859,12 +1908,11 @@ function applyAvatarPhoto(photoData){
 
 function updateSidebarUser(){
   if(!currentUser) return;
-  const profile=getUserProfile();
-  const name=profile.displayName||currentUser.username;
-  const color=profile.avatarColor||AVATAR_COLORS[0];
+  const name=currentUser.displayName||currentUser.username;
+  const color=currentUser.avatarColor||AVATAR_COLORS[0];
   // Sidebar avatar
-  if(profile.photo){
-    $('userAvatar').style.backgroundImage=`url(${profile.photo})`;
+  if(currentUser.photoURL){
+    $('userAvatar').style.backgroundImage=`url(${currentUser.photoURL})`;
     $('userAvatar').style.backgroundSize='cover';
     $('userAvatar').textContent='';
   } else {
@@ -1873,21 +1921,20 @@ function updateSidebarUser(){
     $('userAvatar').textContent=name[0].toUpperCase();
   }
   $('userName').textContent=name;
-  $('userEmail').textContent=profile.bio?profile.bio.slice(0,40)+(profile.bio.length>40?'…':''):currentUser.email;
+  $('userEmail').textContent=currentUser.bio?currentUser.bio.slice(0,40)+(currentUser.bio.length>40?'…':''):currentUser.email;
 }
 
 function openProfileModal(){
-  const profile=getUserProfile();
-  const name=profile.displayName||currentUser.username;
-  const color=profile.avatarColor||AVATAR_COLORS[0];
+  const name=currentUser.displayName||currentUser.username;
+  const color=currentUser.avatarColor||AVATAR_COLORS[0];
 
   $('profileAvatarInitial').textContent=name[0].toUpperCase();
   $('profileAvatarBig').style.background=color;
-  applyAvatarPhoto(profile.photo||null);
+  applyAvatarPhoto(currentUser.photoURL||null);
   $('profileDisplayName').textContent=name;
   $('profileDisplayEmail').textContent=currentUser.email;
   $('pName').value=name;
-  $('pBio').value=profile.bio||'';
+  $('pBio').value=currentUser.bio||'';
   $('pOldPw').value=''; $('pNewPw').value=''; $('pConfirmPw').value='';
   $('pPwMsg').textContent='';
   $('pwSection').style.display='none';
@@ -1898,7 +1945,7 @@ function openProfileModal(){
   $('profileColorPicker').innerHTML=AVATAR_COLORS.map(c=>
     `<div data-color="${c}" style="width:20px;height:20px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${c===color?'var(--text)':'transparent'};transition:border .15s;flex-shrink:0;"></div>`
   ).join('');
-  $('profileColorPicker').style.display=profile.photo?'none':'flex';
+  $('profileColorPicker').style.display=currentUser.photoURL?'none':'flex';
   $('profileColorPicker').querySelectorAll('div').forEach(swatch=>{
     swatch.addEventListener('click',()=>{
       const c=swatch.dataset.color;
@@ -1919,16 +1966,34 @@ function openProfileModal(){
 function closeProfileModal(){ $('profileOverlay').classList.remove('open'); }
 
 // Photo upload
+function resizeImageToDataURL(file, maxDim, quality){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const img=new Image();
+      img.onload=()=>{
+        let {width,height}=img;
+        if(width>height){ if(width>maxDim){ height=Math.round(height*maxDim/width); width=maxDim; } }
+        else if(height>maxDim){ width=Math.round(width*maxDim/height); height=maxDim; }
+        const canvas=document.createElement('canvas');
+        canvas.width=width; canvas.height=height;
+        canvas.getContext('2d').drawImage(img,0,0,width,height);
+        resolve(canvas.toDataURL('image/jpeg',quality));
+      };
+      img.onerror=reject;
+      img.src=e.target.result;
+    };
+    reader.onerror=reject;
+    reader.readAsDataURL(file);
+  });
+}
 $('uploadPhotoBtn').addEventListener('click',()=>$('photoInput').click());
 $('profileAvatarBig').addEventListener('click',()=>$('photoInput').click());
-$('photoInput').addEventListener('change',()=>{
+$('photoInput').addEventListener('change',async ()=>{
   const file=$('photoInput').files[0]; if(!file) return;
-  const reader=new FileReader();
-  reader.onload=e=>{
-    applyAvatarPhoto(e.target.result);
-    $('profileColorPicker').style.display='none';
-  };
-  reader.readAsDataURL(file);
+  const dataUrl=await resizeImageToDataURL(file,200,0.82);
+  applyAvatarPhoto(dataUrl);
+  $('profileColorPicker').style.display='none';
 });
 
 $('togglePwBtn').addEventListener('click',()=>{
@@ -1944,11 +2009,11 @@ $('userCard').addEventListener('click', e=>{ if(!e.target.closest('.user-logout'
 $('profileCancel').addEventListener('click', closeProfileModal);
 $('profileOverlay').addEventListener('click', e=>{ if(e.target===$('profileOverlay')) closeProfileModal(); });
 
-$('profileSave').addEventListener('click',()=>{
+$('profileSave').addEventListener('click',async ()=>{
   const displayName=$('pName').value.trim()||currentUser.username;
   const avatarColor=$('profileAvatarBig').style.background;
   const bio=$('pBio').value.trim();
-  const photo=$('profileAvatarImg').src&&$('profileAvatarImg').style.display!=='none'?$('profileAvatarImg').src:null;
+  const photoURL=$('profileAvatarImg').src&&$('profileAvatarImg').style.display!=='none'?$('profileAvatarImg').src:null;
 
   // Password change (only if user filled in something)
   const oldPw=$('pOldPw').value;
@@ -1956,23 +2021,29 @@ $('profileSave').addEventListener('click',()=>{
   const confirmPw=$('pConfirmPw').value;
   if(oldPw||newPw||confirmPw){
     if(!oldPw){ $('pPwMsg').style.color='var(--coral)'; $('pPwMsg').textContent='Please enter your current password.'; return; }
-    if(btoa(oldPw)!==currentUser.password){ $('pPwMsg').style.color='var(--coral)'; $('pPwMsg').textContent='Current password is incorrect.'; return; }
     if(!newPw){ $('pPwMsg').style.color='var(--coral)'; $('pPwMsg').textContent='Please enter a new password.'; return; }
     if(newPw.length<6){ $('pPwMsg').style.color='var(--coral)'; $('pPwMsg').textContent='New password must be at least 6 characters.'; return; }
     if(newPw!==confirmPw){ $('pPwMsg').style.color='var(--coral)'; $('pPwMsg').textContent='Passwords do not match.'; return; }
-    const users=getUsers();
-    const u=users.find(x=>x.id===currentUser.id);
-    if(u){ u.password=btoa(newPw); saveUsers(users); currentUser=u; localStorage.setItem('lr-current',u.id); }
-    $('pPwMsg').style.color='var(--teal)'; $('pPwMsg').textContent='✓ Password updated successfully.';
+    try{
+      const cred=EmailAuthProvider.credential(currentUser.username.toLowerCase()+SYNTHETIC_DOMAIN, oldPw);
+      await reauthenticateWithCredential(auth.currentUser, cred);
+      await updatePassword(auth.currentUser, newPw);
+      $('pPwMsg').style.color='var(--teal)'; $('pPwMsg').textContent='✓ Password updated successfully.';
+    }catch(err){
+      $('pPwMsg').style.color='var(--coral)';
+      $('pPwMsg').textContent = (err.code==='auth/wrong-password'||err.code==='auth/invalid-credential') ? 'Current password is incorrect.' : (err.message||'Failed to update password.');
+      return;
+    }
   }
 
-  saveUserProfile({displayName,avatarColor,bio,photo});
+  await setDoc(doc(db,'users',currentUser.id),{displayName,avatarColor,bio,photoURL},{merge:true});
+  Object.assign(currentUser,{displayName,avatarColor,bio,photoURL});
+  userCache.set(currentUser.id,currentUser);
   updateSidebarUser();
   if(!oldPw&&!newPw&&!confirmPw) closeProfileModal();
 });
 
 initTheme();
-tryAutoLogin();
 })();
 </script>
 

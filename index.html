@@ -899,7 +899,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
 import {
   getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, getDocs,
-  collection, query, where, orderBy, onSnapshot, arrayUnion, writeBatch
+  collection, query, where, orderBy, onSnapshot, arrayUnion, arrayRemove, writeBatch
 } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -1561,7 +1561,9 @@ function renderGroupsPage(){
     return `<div class="group-card" data-gid="${g.id}" style="position:relative;">
       ${isOwner?`<button class="group-delete-btn" data-gid="${g.id}" title="Delete group" style="position:absolute;top:12px;right:12px;width:28px;height:28px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text-faint);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:border-color .15s,color .15s,background .15s;z-index:1;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-      </button>`:''}
+      </button>`:`<button class="group-leave-btn" data-gid="${g.id}" title="Leave group" style="position:absolute;top:12px;right:12px;width:28px;height:28px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text-faint);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:border-color .15s,color .15s,background .15s;z-index:1;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>`}
       <div class="group-card-head">
         <div class="group-icon" style="background:${GROUP_COLORS[i%GROUP_COLORS.length]}22">${g.emoji||'👥'}</div>
         <div>
@@ -1591,7 +1593,7 @@ function renderGroupsPage(){
   </div>`;
   grid.querySelectorAll('.group-card').forEach(c=>{
     c.addEventListener('click', e=>{
-      if(e.target.closest('.group-delete-btn')) return;
+      if(e.target.closest('.group-delete-btn')||e.target.closest('.group-leave-btn')) return;
       showPage('groupDetail',c.dataset.gid);
     });
   });
@@ -1608,6 +1610,16 @@ function renderGroupsPage(){
       chatDocs.forEach(d=>batch.delete(d.ref));
       batch.delete(doc(db,'groups',gid));
       await batch.commit();
+    });
+  });
+  grid.querySelectorAll('.group-leave-btn').forEach(btn=>{
+    btn.addEventListener('mouseenter',()=>{ btn.style.borderColor='var(--coral)'; btn.style.color='var(--coral)'; btn.style.background='var(--coral-dim)'; });
+    btn.addEventListener('mouseleave',()=>{ btn.style.borderColor='var(--border)'; btn.style.color='var(--text-faint)'; btn.style.background='transparent'; });
+    btn.addEventListener('click', async e=>{
+      e.stopPropagation();
+      const gid=btn.dataset.gid;
+      if(!confirm(`Leave group "${myGroups.find(g=>g.id===gid)?.name}"?`)) return;
+      await updateDoc(doc(db,'groups',gid),{members:arrayRemove(currentUser.id)});
     });
   });
   $('createGroupBtn').addEventListener('click', openGroupModal);

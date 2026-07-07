@@ -827,6 +827,16 @@ body{background:var(--bg); color:var(--text); font-family:'Inter',sans-serif; tr
   </div>
 </div>
 
+<!-- JOIN GROUP MODAL -->
+<div class="overlay" id="joinOverlay">
+  <div class="modal">
+    <h2>Join a group</h2>
+    <div class="field"><label>Group code</label><input type="text" id="joinCode" placeholder="Paste the group code here"></div>
+    <div class="auth-err" id="joinErr" style="text-align:left;margin-top:4px;margin-bottom:0;min-height:0"></div>
+    <div class="modal-actions"><button class="btn-ghost" id="joinCancel">Cancel</button><button class="btn-accent" id="joinSave">Join group</button></div>
+  </div>
+</div>
+
 <!-- PROFILE MODAL -->
 <div class="overlay" id="profileOverlay">
   <div class="modal" style="max-width:420px">
@@ -1556,6 +1566,10 @@ function renderGroupsPage(){
   grid.innerHTML=cards+`<div class="create-group-card" id="createGroupBtn">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
     <span>Create new group</span>
+  </div>
+  <div class="create-group-card" id="joinGroupBtn">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11l-3-3m0 0l-3 3m3-3v8"/></svg>
+    <span>Join a group</span>
   </div>`;
   grid.querySelectorAll('.group-card').forEach(c=>{
     c.addEventListener('click', e=>{
@@ -1579,6 +1593,7 @@ function renderGroupsPage(){
     });
   });
   $('createGroupBtn').addEventListener('click', openGroupModal);
+  $('joinGroupBtn').addEventListener('click', openJoinModal);
 }
 
 async function renderGroupDetail(){
@@ -1598,6 +1613,14 @@ async function renderGroupDetail(){
     </button>`;
     $('openInviteBtn').addEventListener('click',openInviteModal);
   }
+  membersBar.innerHTML+=`<button class="invite-btn" id="copyCodeBtn" title="Anyone with this code can join the group">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+    Copy group code
+  </button>`;
+  $('copyCodeBtn').addEventListener('click',async ()=>{
+    try{ await navigator.clipboard.writeText(currentGroup.id); showToast('soon','📋 Copied',`Group code copied — share it so others can join`); }
+    catch(err){ prompt('Copy this group code:', currentGroup.id); }
+  });
   $('chatMembersLabel').textContent=(currentGroup.members?.length||0)+' member'+(currentGroup.members?.length!==1?'s':'');
   renderGroupTasks();
   renderGroupChat();
@@ -1759,6 +1782,27 @@ $('inviteSave').addEventListener('click',async ()=>{
   closeInviteModal();
   const target=await getUserDoc(targetUid);
   showToast('soon','✅ Invited',`${target.username} added to ${currentGroup.name}`);
+});
+
+// ── JOIN GROUP MODAL ──
+function openJoinModal(){ $('joinOverlay').classList.add('open'); $('joinCode').value=''; $('joinErr').textContent=''; setTimeout(()=>$('joinCode').focus(),50); }
+function closeJoinModal(){ $('joinOverlay').classList.remove('open'); }
+$('joinCancel').addEventListener('click',closeJoinModal);
+$('joinOverlay').addEventListener('click',e=>{ if(e.target===$('joinOverlay')) closeJoinModal(); });
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeJoinModal(); });
+$('joinSave').addEventListener('click',async ()=>{
+  const code=$('joinCode').value.trim();
+  if(!code){ $('joinErr').textContent='Enter a group code.'; return; }
+  const groupSnap=await getDoc(doc(db,'groups',code));
+  if(!groupSnap.exists()){ $('joinErr').textContent='Group not found.'; return; }
+  if((groupSnap.data().members||[]).includes(currentUser.id)){ $('joinErr').textContent="You're already in this group."; return; }
+  try{
+    await updateDoc(doc(db,'groups',code),{members:arrayUnion(currentUser.id)});
+  }catch(err){
+    $('joinErr').textContent='Could not join this group.'; return;
+  }
+  closeJoinModal();
+  showPage('groupDetail',code);
 });
 
 // ══════════════════════════════════

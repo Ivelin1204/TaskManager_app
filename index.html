@@ -1605,18 +1605,17 @@ async function renderGroupDetail(){
   membersBar.innerHTML=memberDocs.map(u=>
     `<div class="member-avatar" title="${esc(u.username)}">${u.username[0].toUpperCase()}</div>`
   ).join('');
-  // Invite button
-  if(currentGroup.ownerId===currentUser.id){
-    membersBar.innerHTML+=`<button class="invite-btn" id="openInviteBtn">
+  // Invite + copy-code buttons (built as one string — reassigning innerHTML twice would
+  // destroy and recreate earlier nodes, silently dropping their listeners)
+  const isOwner=currentGroup.ownerId===currentUser.id;
+  membersBar.innerHTML+=(isOwner?`<button class="invite-btn" id="openInviteBtn">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M12 5v14M5 12h14"/></svg>
       Invite
-    </button>`;
-    $('openInviteBtn').addEventListener('click',openInviteModal);
-  }
-  membersBar.innerHTML+=`<button class="invite-btn" id="copyCodeBtn" title="Anyone with this code can join the group">
+    </button>`:'')+`<button class="invite-btn" id="copyCodeBtn" title="Anyone with this code can join the group">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
     Copy group code
   </button>`;
+  if(isOwner) $('openInviteBtn').addEventListener('click',openInviteModal);
   $('copyCodeBtn').addEventListener('click',async ()=>{
     try{ await navigator.clipboard.writeText(currentGroup.id); showToast('soon','📋 Copied',`Group code copied — share it so others can join`); }
     catch(err){ prompt('Copy this group code:', currentGroup.id); }

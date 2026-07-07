@@ -1359,7 +1359,7 @@ function renderCalView(){
   const prev=new Date(y,m,0).getDate();
   const td=today();
   const taskMap={};
-  tasks.forEach(t=>{ if(t.due){ if(!taskMap[t.due])taskMap[t.due]=[]; taskMap[t.due].push(t); } });
+  getAllMyTasks().forEach(t=>{ if(t.due){ if(!taskMap[t.due])taskMap[t.due]=[]; taskMap[t.due].push(t); } });
   let cells=[];
   for(let i=off;i>0;i--) cells.push({d:prev-i+1,muted:true});
   for(let d=1;d<=dim;d++) cells.push({d,iso:toISO(y,m,d)});
@@ -1376,7 +1376,7 @@ function renderCalView(){
     </div>`;
   }).join('');
   grid.querySelectorAll('.cv-task-chip[data-id]').forEach(el=>{
-    el.addEventListener('click',e=>{ e.stopPropagation(); const t=tasks.find(x=>x.id===el.dataset.id); if(t) openTaskModal(t); });
+    el.addEventListener('click',e=>{ e.stopPropagation(); const t=getAllMyTasks().find(x=>x.id===el.dataset.id); if(t) openTaskModal(t, t._groupId||null); });
   });
 }
 

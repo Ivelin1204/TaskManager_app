@@ -443,7 +443,8 @@ body{background:var(--bg); color:var(--text); font-family:'Inter',sans-serif; tr
 .toast-dot.today{background:var(--amber);}
 .toast-dot.soon{background:var(--teal);}
 .toast-body{flex:1;}
-.toast-label{font-size:10.5px;font-family:'Manrope',sans-serif;font-weight:700;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em;}
+.toast-label{font-size:10.5px;font-family:'Manrope',sans-serif;font-weight:700;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em;display:flex;align-items:center;gap:4px;}
+.toast-label svg{flex-shrink:0;}
 .toast-title{font-size:13px;font-weight:600;color:var(--text);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px;}
 .toast-close{background:none;border:none;cursor:pointer;color:var(--text-faint);display:flex;padding:0;transition:color .12s;}
 .toast-close:hover{color:var(--text);}
@@ -945,6 +946,42 @@ const isOverdue = t => !t.completed && t.due && t.due < today();
 const pRank = {high:0,medium:1,low:2};
 
 // ══════════════════════════════════
+//  SVG ICONS (replace emoji glyphs so rendering is consistent across devices)
+// ══════════════════════════════════
+const ICONS = {
+  alertTriangle:'<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+  clock:'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  calendar:'<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
+  checkCircle:'<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
+  copy:'<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  fileText:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>',
+  clipboard:'<rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>',
+  users:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'
+};
+function svgIcon(path,size=16){
+  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;vertical-align:middle;">${path}</svg>`;
+}
+
+const GROUP_ICON_PATHS = {
+  '🚀':'<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>',
+  '💡':'<line x1="9" y1="18" x2="15" y2="18"/><line x1="10" y1="22" x2="14" y2="22"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5.487.487.85 1 1.5 2.5"/>',
+  '🎯':'<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+  '🛠️':'<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+  '📋':ICONS.clipboard,
+  '🎨':'<circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>',
+  '📊':'<line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/>',
+  '💬':'<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>',
+  '⚡':'<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
+  '🌍':'<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
+  '🏆':'<circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/>',
+  '🔥':'<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
+  '👥':ICONS.users
+};
+function groupIconSvg(emoji,size=18){
+  return svgIcon(GROUP_ICON_PATHS[emoji]||GROUP_ICON_PATHS['👥'],size);
+}
+
+// ══════════════════════════════════
 //  STATE
 // ══════════════════════════════════
 let currentUser = null;
@@ -1269,7 +1306,7 @@ function renderTaskList(){
   const container=$('taskList');
   container.className='task-list'+(viewMode==='grid'?' grid-mode':'');
   if(!list.length){
-    container.innerHTML='<div class="empty"><div class="icon">🗒️</div><div style="font-family:Manrope,sans-serif;font-size:15px;font-weight:600;margin-bottom:4px">No tasks found</div><div>Try adjusting filters or add a new task.</div></div>';
+    container.innerHTML=`<div class="empty"><div class="icon">${svgIcon(ICONS.fileText,32)}</div><div style="font-family:Manrope,sans-serif;font-size:15px;font-weight:600;margin-bottom:4px">No tasks found</div><div>Try adjusting filters or add a new task.</div></div>`;
     return;
   }
   container.innerHTML=list.map((t,i)=>`
@@ -1282,7 +1319,7 @@ function renderTaskList(){
         <span class="chip p${t.priority[0]}">${t.priority}</span>
         ${t.category?`<span class="chip cat">${esc(t.category)}</span>`:''}
         <span class="chip due${isOverdue(t)?' od':''}">${formatDate(t.due)}</span>
-        ${t._fromGroup?`<span class="chip" style="background:var(--teal-dim);color:#A8F0E5;border-color:var(--teal-dim)">👥 ${esc(t._fromGroup)}</span>`:''}
+        ${t._fromGroup?`<span class="chip" style="background:var(--teal-dim);color:#A8F0E5;border-color:var(--teal-dim);display:inline-flex;align-items:center;gap:3px;">${svgIcon(ICONS.users,11)} ${esc(t._fromGroup)}</span>`:''}
       </div>
     </div>
     <div class="task-actions-wrap">
@@ -1543,7 +1580,7 @@ function renderGroupsSidebar(){
   empty.style.display=myGroups.length?'none':'';
   list.innerHTML=myGroups.map(g=>`
     <button class="group-nav-item${currentGroup&&currentGroup.id===g.id?' active':''}" data-gid="${g.id}">
-      <span style="font-size:14px">${g.emoji||'👥'}</span>
+      <span style="display:inline-flex;">${groupIconSvg(g.emoji||'👥',14)}</span>
       <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(g.name)}</span>
     </button>`).join('');
   list.querySelectorAll('.group-nav-item').forEach(btn=>{
@@ -1565,7 +1602,7 @@ function renderGroupsPage(){
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
       </button>`}
       <div class="group-card-head">
-        <div class="group-icon" style="background:${GROUP_COLORS[i%GROUP_COLORS.length]}22">${g.emoji||'👥'}</div>
+        <div class="group-icon" style="background:${GROUP_COLORS[i%GROUP_COLORS.length]}22">${groupIconSvg(g.emoji||'👥',20)}</div>
         <div>
           <div class="group-name">${esc(g.name)}</div>
         </div>
@@ -1647,7 +1684,7 @@ async function renderGroupDetail(){
   </button>`;
   if(isOwner) $('openInviteBtn').addEventListener('click',openInviteModal);
   $('copyCodeBtn').addEventListener('click',async ()=>{
-    try{ await navigator.clipboard.writeText(currentGroup.id); showToast('soon','📋 Copied',`Group code copied — share it so others can join`); }
+    try{ await navigator.clipboard.writeText(currentGroup.id); showToast('soon',ICONS.copy,'Copied',`Group code copied — share it so others can join`); }
     catch(err){ prompt('Copy this group code:', currentGroup.id); }
   });
   $('chatMembersLabel').textContent=(currentGroup.members?.length||0)+' member'+(currentGroup.members?.length!==1?'s':'');
@@ -1663,7 +1700,7 @@ async function renderGroupTasks(){
   const gt=getGroupTasks(currentGroup.id).filter(t=>!q||t.title.toLowerCase().includes(q));
   const container=$('groupTaskList');
   if(!gt.length){
-    container.innerHTML='<div class="empty"><div class="icon">📋</div><div style="font-family:Manrope,sans-serif;font-size:14px;font-weight:600;margin-bottom:4px">No group tasks yet</div><div>Add the first task for this group.</div></div>';
+    container.innerHTML=`<div class="empty"><div class="icon">${svgIcon(ICONS.clipboard,32)}</div><div style="font-family:Manrope,sans-serif;font-size:14px;font-weight:600;margin-bottom:4px">No group tasks yet</div><div>Add the first task for this group.</div></div>`;
     return;
   }
   const assigneeIds=[...new Set(gt.map(t=>t.assignedTo).filter(a=>a&&a!=='all'))];
@@ -1772,6 +1809,7 @@ function openGroupModal(){
 
 // Wire emoji picker
 document.querySelectorAll('.emoji-choice').forEach(btn=>{
+  btn.innerHTML=groupIconSvg(btn.dataset.emoji,20);
   btn.addEventListener('click',()=>{
     document.querySelectorAll('.emoji-choice').forEach(b=>{ b.style.borderColor='var(--border)'; b.classList.remove('sel'); });
     btn.style.borderColor='var(--accent)';
@@ -1810,7 +1848,7 @@ $('inviteSave').addEventListener('click',async ()=>{
   await updateDoc(doc(db,'groups',currentGroup.id),{members:arrayUnion(targetUid)});
   closeInviteModal();
   const target=await getUserDoc(targetUid);
-  showToast('soon','✅ Invited',`${target.username} added to ${currentGroup.name}`);
+  showToast('soon',ICONS.checkCircle,'Invited',`${target.username} added to ${currentGroup.name}`);
 });
 
 // ── JOIN GROUP MODAL ──
@@ -1872,17 +1910,18 @@ function initNotifications(){
   $('notifClear').addEventListener('click',()=>{ wrap.classList.remove('open'); });
 
   // Toasts on load
-  const labels={overdue:'⚠️ Overdue',today:'🕐 Due Today',soon:'📅 Due Tomorrow'};
+  const labels={overdue:'Overdue',today:'Due Today',soon:'Due Tomorrow'};
+  const icons={overdue:ICONS.alertTriangle,today:ICONS.clock,soon:ICONS.calendar};
   getNotifs().slice(0,3).forEach((n,i)=>{
-    setTimeout(()=>showToast(n.type,labels[n.type],n.task.title), 800+i*350);
+    setTimeout(()=>showToast(n.type,icons[n.type],labels[n.type],n.task.title), 800+i*350);
   });
 }
 
-function showToast(type,label,title){
+function showToast(type,icon,label,title){
   const c=$('toastContainer');
   const t=document.createElement('div');
   t.className='toast';
-  t.innerHTML=`<div class="toast-dot ${type}"></div><div class="toast-body"><div class="toast-label">${label}</div><div class="toast-title">${esc(title)}</div></div><button class="toast-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>`;
+  t.innerHTML=`<div class="toast-dot ${type}"></div><div class="toast-body"><div class="toast-label"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${icon}</svg>${label}</div><div class="toast-title">${esc(title)}</div></div><button class="toast-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>`;
   c.appendChild(t);
   requestAnimationFrame(()=>requestAnimationFrame(()=>t.classList.add('show')));
   const dismiss=()=>{ t.classList.replace('show','hide'); setTimeout(()=>t.remove(),300); };
